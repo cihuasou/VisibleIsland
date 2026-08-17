@@ -687,13 +687,20 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
+CFTypeRef MGCopyAnswer(CFStringRef key);
+
 %hookf(CFTypeRef, MGCopyAnswer, CFStringRef key)
 {
     if (islandEnabled &&
         key &&
         CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+
         int value = 2556;
-        return CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &value);
+        return CFNumberCreate(
+            kCFAllocatorDefault,
+            kCFNumberIntType,
+            &value
+        );
     }
 
     return %orig(key);
@@ -729,6 +736,11 @@ void preferencesChanged(){
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+		%init(MGCopyAnswer = MSFindSymbol(
+		            NULL,
+		            "_MGCopyAnswer"
+		        ));
+
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
 }
