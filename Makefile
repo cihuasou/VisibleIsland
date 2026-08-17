@@ -1,4 +1,4 @@
-TARGET := iphone:clang:latest:15.0
+TARGET := iphone:clang:16.5:16.0
 INSTALL_TARGET_PROCESSES = backboardd aggregated
 
 THEOS_DEVICE_IP=localhost
@@ -12,7 +12,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = VisibleIsland
 
 VisibleIsland_FILES = Tweak.xm 
-VisibleIsland_CFLAGS = -fobjc-arc
+VisibleIsland_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += visibleislandprefs
