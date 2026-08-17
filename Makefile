@@ -13,7 +13,6 @@ TWEAK_NAME = VisibleIsland
 
 VisibleIsland_FILES = Tweak.xm 
 VisibleIsland_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-VisibleIsland_LDFLAGS += -lMobileGestalt
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += visibleislandprefs
