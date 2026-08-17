@@ -687,8 +687,6 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
-extern "C" CFTypeRef MGCopyAnswer(CFStringRef key);
-
 %hookf(CFTypeRef, MGCopyAnswer, CFStringRef key)
 {
     if (islandEnabled &&
