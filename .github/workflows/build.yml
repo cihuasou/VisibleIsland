@@ -14,43 +14,71 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Theos
-        uses: Randomblock1/theos-action@v1
-        with:
-          theos-dir: ${{ github.workspace }}/theos
-          theos-src: https://github.com/theos/theos
-          theos-sdks: https://github.com/theos/sdks
-          theos-sdks-branch: master
+      - name: Install roothide Theos
+        run: |
+          export THEOS="$GITHUB_WORKSPACE/theos"
 
-      - name: Show SDKs
+          git clone --recursive \
+            https://github.com/roothide/theos.git \
+            "$THEOS"
+
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Install patched SDKs
+        run: |
+          export THEOS="$GITHUB_WORKSPACE/theos"
+
+          git clone --depth 1 \
+            https://github.com/theos/sdks.git \
+            /tmp/theos-sdks
+
+          mkdir -p "$THEOS/sdks"
+
+          cp -R /tmp/theos-sdks/iPhoneOS16.5.sdk \
+            "$THEOS/sdks/"
+
+      - name: Check Theos
         run: |
           echo "THEOS=$THEOS"
+          echo
+          echo "Theos:"
+          ls -la "$THEOS"
+
+          echo
           echo "SDKs:"
           ls -la "$THEOS/sdks"
 
-      - name: Check Preferences
+      - name: Check Preferences framework
         run: |
-          echo "Searching for Preferences..."
+          echo "Searching Preferences..."
+
           find "$THEOS/sdks" \
             \( -name "Preferences.tbd" -o -name "Preferences.framework" \) \
             -print || true
 
+      - name: Check roothide package scheme
+        run: |
+          grep -R "roothide" \
+            "$THEOS/makefiles" \
+            "$THEOS/package" \
+            2>/dev/null | head -50 || true
+
       - name: Build
         run: |
-          export THEOS="${{ github.workspace }}/theos"
-
           make clean
           make package FINALPACKAGE=1
 
-      - name: List packages
+      - name: Show generated packages
         run: |
-          find . -type f \
-            \( -name "*.deb" -o -name "*.ipa" \) \
+          echo "Generated packages:"
+          find . \
+            -type f \
+            \( -name "*.deb" -o -name "*.tipa" \) \
             -print
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: VisibleIsland-package
-          path: packages/*.deb
+          path: packages/*
           if-no-files-found: error
