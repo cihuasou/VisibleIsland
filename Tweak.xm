@@ -687,6 +687,44 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
+static void VIEnableDynamicIslandAfterBoot(void)
+{
+    if (!islandEnabled) {
+        return;
+    }
+
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+        dispatch_get_main_queue(),
+        ^{
+            NSString *plistPath =
+                @"/var/containers/Shared/SystemGroup/"
+                @"systemgroup.com.apple.configurationprofiles/"
+                @"Library/ConfigurationProfiles/"
+                @"PublicInfo/MobileGestalt.plist";
+
+            NSMutableDictionary *plistDictionary =
+                [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
+
+            if (!plistDictionary) {
+                return;
+            }
+
+            NSMutableDictionary *nestedDictionary =
+                [plistDictionary[@"CacheExtra"] mutableCopy];
+
+            if (!nestedDictionary) {
+                return;
+            }
+
+            nestedDictionary[@"ArtworkDeviceSubType"] = @(2556);
+            plistDictionary[@"CacheExtra"] = nestedDictionary;
+
+            [plistDictionary writeToFile:plistPath atomically:YES];
+        }
+    );
+}
+
 CFTypeRef MGCopyAnswer(CFStringRef key);
 
 %hookf(CFTypeRef, MGCopyAnswer, CFStringRef key)
@@ -736,6 +774,9 @@ void preferencesChanged(){
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+
+		VIEnableDynamicIslandAfterBoot();
+
 		%init(MGCopyAnswer = MSFindSymbol(
 		            NULL,
 		            "_MGCopyAnswer"
