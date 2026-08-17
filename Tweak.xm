@@ -707,6 +707,50 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
+static void VIEnsureDynamicIslandEnabled(void)
+{
+    if (!islandEnabled) {
+        return;
+    }
+
+    NSString *plistPath = @"/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist";
+
+    NSMutableDictionary *plistDictionary =
+        [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
+
+    if (!plistDictionary) {
+        return;
+    }
+
+    NSMutableDictionary *cacheExtraDictionary =
+        plistDictionary[@"CacheExtra"];
+
+    if (!cacheExtraDictionary) {
+        cacheExtraDictionary = [NSMutableDictionary dictionary];
+        plistDictionary[@"CacheExtra"] = cacheExtraDictionary;
+    }
+
+    NSMutableDictionary *nestedDictionary =
+        cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"];
+
+    if (!nestedDictionary) {
+        nestedDictionary = [NSMutableDictionary dictionary];
+        cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"] = nestedDictionary;
+    }
+
+    NSNumber *currentValue =
+        nestedDictionary[@"ArtworkDeviceSubType"];
+
+    if ([currentValue integerValue] == 2556) {
+        return;
+    }
+
+    nestedDictionary[@"ArtworkDeviceSubType"] = @(2556);
+
+    [plistDictionary writeToFile:plistPath atomically:YES];
+}
+
+
 static void VIForceInitialApertureLayout(void)
 {
     if (VIInitialLayoutTriggered) {
@@ -778,6 +822,12 @@ void preferencesChanged(){
 
 %ctor{
 	preferencesChanged();
+
+    if ([[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+
+        VIEnsureDynamicIslandEnabled();
+    }
 
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
