@@ -699,9 +699,9 @@ static void VIEnableDynamicIslandAfterBoot(void)
         ^{
             NSString *plistPath =
                 @"/var/containers/Shared/SystemGroup/"
-                @"systemgroup.com.apple.configurationprofiles/"
-                @"Library/ConfigurationProfiles/"
-                @"PublicInfo/MobileGestalt.plist";
+                @"systemgroup.com.apple.mobilegestaltcache/"
+                @"Library/Caches/"
+                @"com.apple.MobileGestalt.plist";
 
             NSMutableDictionary *plistDictionary =
                 [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
@@ -710,38 +710,28 @@ static void VIEnableDynamicIslandAfterBoot(void)
                 return;
             }
 
-            NSMutableDictionary *nestedDictionary =
+            NSMutableDictionary *cacheExtraDictionary =
                 [plistDictionary[@"CacheExtra"] mutableCopy];
 
+            if (!cacheExtraDictionary) {
+                cacheExtraDictionary = [NSMutableDictionary dictionary];
+                plistDictionary[@"CacheExtra"] = cacheExtraDictionary;
+            }
+
+            NSMutableDictionary *nestedDictionary =
+                [cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
+
             if (!nestedDictionary) {
-                return;
+                nestedDictionary = [NSMutableDictionary dictionary];
+                cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"] =
+                    nestedDictionary;
             }
 
             nestedDictionary[@"ArtworkDeviceSubType"] = @(2556);
-            plistDictionary[@"CacheExtra"] = nestedDictionary;
 
             [plistDictionary writeToFile:plistPath atomically:YES];
         }
     );
-}
-
-CFTypeRef MGCopyAnswer(CFStringRef key);
-
-%hookf(CFTypeRef, MGCopyAnswer, CFStringRef key)
-{
-    if (islandEnabled &&
-        key &&
-        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
-
-        int value = 2556;
-        return CFNumberCreate(
-            kCFAllocatorDefault,
-            kCFNumberIntType,
-            &value
-        );
-    }
-
-    return %orig(key);
 }
 
 void preferencesChanged(){
@@ -776,11 +766,6 @@ void preferencesChanged(){
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 
 		VIEnableDynamicIslandAfterBoot();
-
-		%init(MGCopyAnswer = MSFindSymbol(
-		            NULL,
-		            "_MGCopyAnswer"
-		        ));
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
