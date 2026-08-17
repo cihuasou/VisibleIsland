@@ -1,0 +1,138 @@
+name: Build VisibleIsland
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build VisibleIsland
+    runs-on: macos-14
+
+    steps:
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. Show environment
+      # --------------------------------------------------
+      - name: Environment
+        run: |
+          echo "===== BUILD ENVIRONMENT ====="
+          sw_vers
+          xcodebuild -version
+          clang --version
+          echo "============================"
+
+      # --------------------------------------------------
+      # 3. Install roothide Theos
+      #
+      # VisibleIsland 当前 Makefile 使用：
+      # THEOS_PACKAGE_SCHEME=roothide
+      #
+      # 因此这里不能使用普通 Theos。
+      # --------------------------------------------------
+      - name: Install roothide Theos
+        run: |
+          echo "===== INSTALL ROOT HIDE THEOS ====="
+
+          export THEOS="$HOME/theos"
+
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+          echo "===== THEOS INSTALLED ====="
+          ls -la "$THEOS"
+          echo "==========================="
+
+      # --------------------------------------------------
+      # 4. Check project
+      # --------------------------------------------------
+      - name: Check project
+        run: |
+          echo "===== PROJECT ====="
+          pwd
+          find . -maxdepth 3 -type f | sort
+          echo "==================="
+
+      # --------------------------------------------------
+      # 5. Clean
+      #
+      # 防止之前缓存的 arm64/arm64e 或其它 scheme
+      # 影响当前 roothide 构建。
+      # --------------------------------------------------
+      - name: Clean
+        run: |
+          echo "===== CLEAN ====="
+          make clean || true
+          rm -rf packages
+          mkdir -p packages
+
+      # --------------------------------------------------
+      # 6. Build package
+      #
+      # Makefile 本身已经：
+      #
+      # THEOS_PACKAGE_SCHEME=roothide
+      #
+      # 因此这里不再强行修改项目配置。
+      # --------------------------------------------------
+      - name: Build package
+        run: |
+          echo "===== BUILD START ====="
+
+          make clean package FINALPACKAGE=1 messages=yes
+
+          echo "===== BUILD FINISHED ====="
+
+      # --------------------------------------------------
+      # 7. Check generated package
+      # --------------------------------------------------
+      - name: Check package
+        run: |
+          echo "===== PACKAGE CHECK ====="
+
+          if [ ! -d "packages" ]; then
+            echo "ERROR: packages directory does not exist"
+            exit 1
+          fi
+
+          ls -lah packages/
+
+          DEB_COUNT=$(find packages -maxdepth 1 -type f -name "*.deb" | wc -l | tr -d ' ')
+
+          if [ "$DEB_COUNT" -eq 0 ]; then
+            echo "ERROR: No .deb package generated"
+            exit 1
+          fi
+
+          echo "Found $DEB_COUNT .deb package(s)"
+
+          for DEB in packages/*.deb; do
+            echo ""
+            echo "===== PACKAGE: $DEB ====="
+            file "$DEB"
+            ls -lh "$DEB"
+          done
+
+      # --------------------------------------------------
+      # 8. Upload .deb
+      #
+      # GitHub Actions 页面：
+      #
+      # Actions
+      #  -> 当前 Build
+      #  -> Artifacts
+      #  -> VisibleIsland-deb
+      #
+      # --------------------------------------------------
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VisibleIsland-deb
+          path: packages/*.deb
+          if-no-files-found: error
+          retention-days: 30
