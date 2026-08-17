@@ -10,6 +10,6 @@ VisibleIslandPrefs_FILES = VISRootListController.m CLRRootListController.m NOTRo
 VisibleIslandPrefs_FRAMEWORKS = UIKit
 VisibleIslandPrefs_PRIVATE_FRAMEWORKS = Preferences
 VisibleIslandPrefs_INSTALL_PATH = /Library/PreferenceBundles
-VisibleIslandPrefs_CFLAGS = -fobjc-arc
+VisibleIslandPrefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
 include $(THEOS_MAKE_PATH)/bundle.mk
