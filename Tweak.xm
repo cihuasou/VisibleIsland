@@ -25,6 +25,8 @@ static BOOL transEnabled;
 static BOOL scaleEnabled;
 static BOOL lineDisabled;
 
+static BOOL VIInitialLayoutTriggered = NO;
+
 @interface FBSystemService : NSObject
 
 +(id)sharedInstance;
@@ -332,6 +334,24 @@ static BOOL lineDisabled;
     } else if (scaleEnabled && !posEnabled | scaleEnabled && !fixEnabled) {
         self.transform = CGAffineTransformMakeScale(scale, scale);
     }
+}
+
+- (void)didMoveToWindow
+{
+    %orig;
+
+    if (!self.window) {
+        return;
+    }
+
+    /*
+     * 等当前 Window 层级完成后再触发布局。
+     * 使用主线程是为了避免在 UIKit 非主线程操作 UIView。
+     */
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+    });
 }
 
 %end
@@ -687,6 +707,51 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
+static void VIForceInitialApertureLayout(void)
+{
+    if (VIInitialLayoutTriggered) {
+        return;
+    }
+
+    Class apertureClass = NSClassFromString(@"SBSystemApertureWindow");
+
+    if (!apertureClass) {
+        return;
+    }
+
+    UIApplication *application = [UIApplication sharedApplication];
+
+    if (!application) {
+        return;
+    }
+
+    NSArray *windows = application.windows;
+
+    for (UIWindow *window in windows) {
+
+        if ([window isKindOfClass:apertureClass]) {
+
+            VIInitialLayoutTriggered = YES;
+
+            /*
+             * 只重新触发布局。
+             *
+             * 不修改 frame
+             * 不修改 transform
+             * 不修改 alpha
+             * 不修改颜色
+             * 不修改通知
+             */
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [window setNeedsLayout];
+                [window layoutIfNeeded];
+            });
+
+            return;
+        }
+    }
+}
+
 void preferencesChanged(){
     NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.ethxnn88.visibleislandprefs"];
 
@@ -714,9 +779,49 @@ void preferencesChanged(){
 %ctor{
 	preferencesChanged();
 
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        NULL,
+        (CFNotificationCallback)preferencesChanged,
+        CFSTR("com.ethxnn88.visibleislandprefs-updated"),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
 
-    if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+    if ([[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            respring,
+            CFSTR("com.ethxnn88.visibleislandprefs-respring"),
+            NULL,
+            CFNotificationSuspensionBehaviorCoalesce
+        );
+
+        /*
+         * Dopamine 激活后，SpringBoard 可能已经创建了
+         * SBSystemApertureWindow。
+         *
+         * 延迟到 SpringBoard 主线程进入正常运行状态以后，
+         * 主动检查一次已经存在的 Aperture Window。
+         *
+         * 只执行一次，不参与正常运行期间的布局。
+         */
+        dispatch_async(dispatch_get_main_queue(), ^{
+            VIForceInitialApertureLayout();
+
+			dispatch_after(
+			    dispatch_time(
+			        DISPATCH_TIME_NOW,
+			        (int64_t)(1.0 * NSEC_PER_SEC)
+			    ),
+			    dispatch_get_main_queue(),
+			    ^{
+			        VIForceInitialApertureLayout();
+			    }
+			);
+        });
     }
 }
