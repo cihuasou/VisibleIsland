@@ -1,3 +1,4 @@
+```yaml
 name: Build VisibleIsland
 
 on:
@@ -8,12 +9,59 @@ on:
 
 jobs:
   build:
+    name: Build .deb
     runs-on: macos-14
 
     steps:
+      # ---------------------------------------------------------
+      # 1. Checkout source
+      # ---------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ---------------------------------------------------------
+      # 2. Install Homebrew dependencies
+      # ---------------------------------------------------------
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install ldid xz
+
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      # ---------------------------------------------------------
+      # 3. Verify build tools
+      # ---------------------------------------------------------
+      - name: Verify build environment
+        run: |
+          echo "=== macOS ==="
+          sw_vers
+
+          echo
+          echo "=== Xcode ==="
+          xcodebuild -version
+
+          echo
+          echo "=== Clang ==="
+          clang --version
+
+          echo
+          echo "=== Make ==="
+          make --version | head -1
+
+          echo
+          echo "=== ldid ==="
+          which ldid
+          ldid -h || true
+
+          echo
+          echo "=== xz ==="
+          which xz
+          xz --version | head -1
+
+      # ---------------------------------------------------------
+      # 4. Install roothide Theos
+      # ---------------------------------------------------------
       - name: Install roothide Theos
         run: |
           export THEOS="$GITHUB_WORKSPACE/theos"
@@ -24,7 +72,10 @@ jobs:
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Install patched SDKs
+      # ---------------------------------------------------------
+      # 5. Install iOS SDK
+      # ---------------------------------------------------------
+      - name: Install iOS SDK
         run: |
           export THEOS="$GITHUB_WORKSPACE/theos"
 
@@ -34,51 +85,131 @@ jobs:
 
           mkdir -p "$THEOS/sdks"
 
-          cp -R /tmp/theos-sdks/iPhoneOS16.5.sdk \
+          cp -R \
+            /tmp/theos-sdks/iPhoneOS16.5.sdk \
             "$THEOS/sdks/"
 
-      - name: Check Theos
+      # ---------------------------------------------------------
+      # 6. Verify Theos / SDK
+      # ---------------------------------------------------------
+      - name: Verify Theos
         run: |
-          echo "THEOS=$THEOS"
+          echo "=== THEOS ==="
+          echo "$THEOS"
+
           echo
-          echo "Theos:"
+          echo "=== Theos directory ==="
           ls -la "$THEOS"
 
           echo
-          echo "SDKs:"
+          echo "=== SDKs ==="
           ls -la "$THEOS/sdks"
 
-      - name: Check Preferences framework
-        run: |
-          echo "Searching Preferences..."
+          echo
+          echo "=== iOS SDK ==="
+          xcrun --sdk iphoneos --show-sdk-version || true
 
-          find "$THEOS/sdks" \
-            \( -name "Preferences.tbd" -o -name "Preferences.framework" \) \
-            -print || true
-
-      - name: Check roothide package scheme
+      # ---------------------------------------------------------
+      # 7. Verify roothide package scheme
+      # ---------------------------------------------------------
+      - name: Verify roothide scheme
         run: |
+          echo "=== THEOS_PACKAGE_SCHEME ==="
+          grep -n "THEOS_PACKAGE_SCHEME" Makefile || true
+
+          echo
+          echo "=== roothide support ==="
           grep -R "roothide" \
             "$THEOS/makefiles" \
             "$THEOS/package" \
-            2>/dev/null | head -50 || true
+            "$THEOS/vendor" \
+            2>/dev/null | head -100 || true
 
-      - name: Build
+      # ---------------------------------------------------------
+      # 8. Verify project configuration
+      # ---------------------------------------------------------
+      - name: Verify project
+        run: |
+          echo "=== Main Makefile ==="
+          cat Makefile
+
+          echo
+          echo "=== Package control ==="
+          cat control
+
+          echo
+          echo "=== Preferences Makefile ==="
+          cat visibleislandprefs/Makefile
+
+      # ---------------------------------------------------------
+      # 9. Clean
+      # ---------------------------------------------------------
+      - name: Clean
         run: |
           make clean
+
+      # ---------------------------------------------------------
+      # 10. Build release package
+      # ---------------------------------------------------------
+      - name: Build package
+        run: |
           make package FINALPACKAGE=1
 
+      # ---------------------------------------------------------
+      # 11. Show build result
+      # ---------------------------------------------------------
       - name: Show generated packages
         run: |
-          echo "Generated packages:"
+          echo "=== Generated packages ==="
+
           find . \
             -type f \
-            \( -name "*.deb" -o -name "*.tipa" \) \
+            -name "*.deb" \
             -print
 
-      - name: Upload package
+          echo
+          echo "=== packages directory ==="
+
+          if [ -d packages ]; then
+            ls -lah packages
+          else
+            echo "packages directory does not exist!"
+            exit 1
+          fi
+
+      # ---------------------------------------------------------
+      # 12. Validate Debian package
+      # ---------------------------------------------------------
+      - name: Validate deb
+        run: |
+          DEB_FILE=$(find packages -maxdepth 1 -type f -name "*.deb" | head -1)
+
+          if [ -z "$DEB_FILE" ]; then
+            echo "ERROR: No .deb package was generated."
+            exit 1
+          fi
+
+          echo "Package:"
+          echo "$DEB_FILE"
+
+          echo
+          echo "=== Debian package information ==="
+
+          dpkg-deb -I "$DEB_FILE" || true
+
+          echo
+          echo "=== Debian package contents ==="
+
+          dpkg-deb -c "$DEB_FILE" || true
+
+      # ---------------------------------------------------------
+      # 13. Upload .deb artifact
+      # ---------------------------------------------------------
+      - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
-          name: VisibleIsland-package
-          path: packages/*
+          name: VisibleIsland-deb
+          path: packages/*.deb
           if-no-files-found: error
+          retention-days: 30
+```
