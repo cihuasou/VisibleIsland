@@ -2,83 +2,55 @@ name: Build VisibleIsland
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
-    name: Build VisibleIsland
     runs-on: macos-14
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: ${{ github.workspace }}/theos
+          theos-src: https://github.com/theos/theos
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+
+      - name: Show SDKs
         run: |
-          echo "===== XCODE ====="
-          xcode-select -p
-          xcodebuild -version
+          echo "THEOS=$THEOS"
+          echo "SDKs:"
+          ls -la "$THEOS/sdks"
 
-      - name: Install roothide Theos
+      - name: Check Preferences
         run: |
-          export THEOS="$HOME/theos"
-
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
-
-          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
-
-      - name: Install Theos SDKs
-        run: |
-          echo "===== INSTALL SDK ====="
-
-          git clone --depth 1 \
-            https://github.com/theos/sdks.git \
-            "$RUNNER_TEMP/theos-sdks"
-
-          mkdir -p "$THEOS/sdks"
-
-          find "$RUNNER_TEMP/theos-sdks" \
-            -maxdepth 1 \
-            -type d \
-            -name "*.sdk" \
-            -exec cp -R {} "$THEOS/sdks/" \;
-
-          echo "===== SDK LIST ====="
-          ls -lah "$THEOS/sdks"
-
-      - name: Check Preferences framework
-        run: |
-          echo "===== SEARCH PREFERENCES ====="
-
-          find "$THEOS" \
-            -iname "Preferences.framework" \
-            -o -iname "Preferences.tbd" \
-            | head -50
-
-      - name: Clean
-        run: |
-          make clean || true
-          rm -rf packages
-          mkdir -p packages
+          echo "Searching for Preferences..."
+          find "$THEOS/sdks" \
+            \( -name "Preferences.tbd" -o -name "Preferences.framework" \) \
+            -print || true
 
       - name: Build
         run: |
-          echo "===== BUILD START ====="
+          export THEOS="${{ github.workspace }}/theos"
 
-          make clean package FINALPACKAGE=1 messages=yes
+          make clean
+          make package FINALPACKAGE=1
 
-          echo "===== BUILD FINISHED ====="
-
-      - name: Check package
+      - name: List packages
         run: |
-          echo "===== PACKAGES ====="
-          ls -lah packages/
+          find . -type f \
+            \( -name "*.deb" -o -name "*.ipa" \) \
+            -print
 
-          test -n "$(find packages -name '*.deb' -print -quit)"
-
-      - name: Upload DEB
+      - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: VisibleIsland-deb
+          name: VisibleIsland-package
           path: packages/*.deb
           if-no-files-found: error
-          retention-days: 30
