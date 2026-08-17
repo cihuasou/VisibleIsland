@@ -687,6 +687,20 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
+extern "C" CFTypeRef MGCopyAnswer(CFStringRef key);
+
+%hookf(CFTypeRef, MGCopyAnswer, CFStringRef key)
+{
+    if (islandEnabled &&
+        key &&
+        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+        int value = 2556;
+        return CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &value);
+    }
+
+    return %orig(key);
+}
+
 void preferencesChanged(){
     NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.ethxnn88.visibleislandprefs"];
 
