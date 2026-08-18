@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <sys/sysctl.h>
+#import <dlfcn.h>
 
 CGFloat red = 0.0;
 CGFloat green = 0.0;
@@ -687,53 +688,6 @@ static void respring(CFNotificationCenterRef center, void *observer, CFStringRef
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
-static void VIEnableDynamicIslandAfterBoot(void)
-{
-    if (!islandEnabled) {
-        return;
-    }
-
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            NSString *plistPath =
-                @"/var/containers/Shared/SystemGroup/"
-                @"systemgroup.com.apple.mobilegestaltcache/"
-                @"Library/Caches/"
-                @"com.apple.MobileGestalt.plist";
-
-            NSMutableDictionary *plistDictionary =
-                [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
-
-            if (!plistDictionary) {
-                return;
-            }
-
-            NSMutableDictionary *cacheExtraDictionary =
-                [plistDictionary[@"CacheExtra"] mutableCopy];
-
-            if (!cacheExtraDictionary) {
-                cacheExtraDictionary = [NSMutableDictionary dictionary];
-                plistDictionary[@"CacheExtra"] = cacheExtraDictionary;
-            }
-
-            NSMutableDictionary *nestedDictionary =
-                [cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
-
-            if (!nestedDictionary) {
-                nestedDictionary = [NSMutableDictionary dictionary];
-                cacheExtraDictionary[@"oPeik/9e8lQWMszEjbPzng"] =
-                    nestedDictionary;
-            }
-
-            nestedDictionary[@"ArtworkDeviceSubType"] = @(2556);
-
-            [plistDictionary writeToFile:plistPath atomically:YES];
-        }
-    );
-}
-
 void preferencesChanged(){
     NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.ethxnn88.visibleislandprefs"];
 
@@ -758,15 +712,68 @@ void preferencesChanged(){
     scale = [[prefs objectForKey:@"scale"] floatValue];
 }
 
+typedef CFTypeRef (*MGCopyAnswerFunc)(CFStringRef key);
+
+static MGCopyAnswerFunc originalMGCopyAnswer = NULL;
+
+static CFTypeRef hookedMGCopyAnswer(CFStringRef key)
+{
+    if (key &&
+        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+
+        int value = 2556;
+
+        return CFNumberCreate(
+            kCFAllocatorDefault,
+            kCFNumberIntType,
+            &value
+        );
+    }
+
+    if (originalMGCopyAnswer) {
+        return originalMGCopyAnswer(key);
+    }
+
+    return NULL;
+}
+
+static void installDynamicIslandMGHook(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    void *handle =
+        dlopen("/System/Library/PrivateFrameworks/MobileGestalt.framework/MobileGestalt",
+               RTLD_LAZY);
+
+    if (!handle) {
+        return;
+    }
+
+    void *symbol =
+        dlsym(handle, "MGCopyAnswer");
+
+    if (!symbol) {
+        dlclose(handle);
+        return;
+    }
+
+    MSHookFunction(
+        symbol,
+        (void *)&hookedMGCopyAnswer,
+        (void **)&originalMGCopyAnswer
+    );
+}
+
 %ctor{
 	preferencesChanged();
 
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-
-		VIEnableDynamicIslandAfterBoot();
-
+		installDynamicIslandMGHook();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
 }
