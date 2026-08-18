@@ -1,6 +1,6 @@
 Package: com.ethxnn88.visibleisland
-Name: VisibleIsland
-Version: 2.0
+Name: VisibleIsland 解决设备重启再次激活越狱后丢失问题
+Version: 2.1
 Architecture: iphoneos-arm64e
 Description: Enable and fix Dynamic Island on older devices.
 Maintainer: ethxnn88
