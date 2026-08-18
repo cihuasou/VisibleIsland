@@ -896,6 +896,79 @@ static void VIEnsureDynamicIslandEnabled(void)
     [plist writeToFile:plistPath atomically:YES];
 }
 
+static void VIRefreshExistingApertureWindow(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_after(
+            dispatch_time(
+                DISPATCH_TIME_NOW,
+                (int64_t)(2.0 * NSEC_PER_SEC)
+            ),
+            dispatch_get_main_queue(),
+            ^{
+
+                Class windowClass =
+                    objc_getClass("SBSystemApertureWindow");
+
+                if (!windowClass) {
+                    VIWriteDebugStatus(
+                        @"SBSystemApertureWindow class NOT FOUND"
+                    );
+                    return;
+                }
+
+                VIWriteDebugStatus(
+                    @"SBSystemApertureWindow class FOUND"
+                );
+
+                NSArray *scenes =
+                    [[UIApplication sharedApplication]
+                        connectedScenes].allObjects;
+
+                for (UIScene *scene in scenes) {
+
+                    if (![scene isKindOfClass:
+                            [UIWindowScene class]]) {
+                        continue;
+                    }
+
+                    UIWindowScene *windowScene =
+                        (UIWindowScene *)scene;
+
+                    for (UIWindow *window in
+                         windowScene.windows) {
+
+                        if ([window isKindOfClass:windowClass]) {
+
+                            VIWriteDebugStatus(
+                                @"Existing SBSystemApertureWindow FOUND"
+                            );
+
+                            [window setNeedsLayout];
+                            [window layoutIfNeeded];
+
+                            VIWriteDebugStatus(
+                                @"Existing SBSystemApertureWindow layout triggered"
+                            );
+
+                            return;
+                        }
+                    }
+                }
+
+                VIWriteDebugStatus(
+                    @"Existing SBSystemApertureWindow NOT FOUND"
+                );
+            }
+        );
+    });
+}
+
 %ctor{
 	preferencesChanged();
 
@@ -915,6 +988,8 @@ static void VIEnsureDynamicIslandEnabled(void)
          * 这是持久化保险，不删除。
          */
         VIEnsureDynamicIslandEnabled();
+
+		VIRefreshExistingApertureWindow();
 
 	    VIDebugApertureController();
 
