@@ -10,12 +10,28 @@ static void VIWriteDebugStatus(NSString *status)
         @"/var/mobile/Library/Preferences/"
          @"com.ethxnn88.visibleisland.debug";
 
-    NSDictionary *data = @{
-        @"status": status ?: @"unknown",
-        @"time": @([[NSDate date] timeIntervalSince1970])
-    };
+    NSMutableArray *logs =
+        [NSMutableArray arrayWithContentsOfFile:path];
 
-    [data writeToFile:path atomically:YES];
+    if (!logs) {
+        logs = [NSMutableArray array];
+    }
+
+    NSString *entry = [NSString stringWithFormat:
+        @"%.3f  %@",
+        [[NSDate date] timeIntervalSince1970],
+        status ?: @"unknown"
+    ];
+
+    [logs addObject:entry];
+
+    // 最多保留 50 条，避免文件无限增长
+    if (logs.count > 50) {
+        [logs removeObjectsInRange:
+            NSMakeRange(0, logs.count - 50)];
+    }
+
+    [logs writeToFile:path atomically:YES];
 }
 
 
