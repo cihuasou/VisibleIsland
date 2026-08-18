@@ -3,6 +3,7 @@
 #import <sys/sysctl.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#import <substrate.h>
 
 static void VIWriteDebugStatus(NSString *status)
 {
@@ -865,6 +866,9 @@ static void VIEnsureDynamicIslandEnabled(void)
         [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
 
     if (!plist) {
+        VIWriteDebugStatus(
+            @"AutoFix: MobileGestalt plist NOT FOUND"
+        );
         return;
     }
 
@@ -872,6 +876,9 @@ static void VIEnsureDynamicIslandEnabled(void)
         [plist[@"CacheExtra"] mutableCopy];
 
     if (!cacheExtra) {
+        VIWriteDebugStatus(
+            @"AutoFix: CacheExtra NOT FOUND"
+        );
         return;
     }
 
@@ -879,142 +886,129 @@ static void VIEnsureDynamicIslandEnabled(void)
         [cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
 
     if (!deviceInfo) {
+        VIWriteDebugStatus(
+            @"AutoFix: DeviceInfo NOT FOUND"
+        );
         return;
     }
 
     NSNumber *value =
         deviceInfo[@"ArtworkDeviceSubType"];
 
+    /*
+     * 已经是 Dynamic Island 对应的 subtype。
+     *
+     * 非常重要：
+     * 如果已经是 2556，绝对不要再次 respring，
+     * 防止 SpringBoard 无限循环重启。
+     */
     if ([value intValue] == 2556) {
+        VIWriteDebugStatus(
+            @"AutoFix: ArtworkDeviceSubType already 2556"
+        );
         return;
     }
 
+    VIWriteDebugStatus(
+        [NSString stringWithFormat:
+            @"AutoFix: ArtworkDeviceSubType changing %@ -> 2556",
+            value ?: @"nil"]
+    );
+
     deviceInfo[@"ArtworkDeviceSubType"] = @2556;
+
     cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] = deviceInfo;
     plist[@"CacheExtra"] = cacheExtra;
 
-    [plist writeToFile:plistPath atomically:YES];
-}
+    BOOL success =
+        [plist writeToFile:plistPath atomically:YES];
 
-static void VIRefreshExistingApertureWindow(void)
-{
-    if (![[NSBundle mainBundle].bundleIdentifier
-            isEqualToString:@"com.apple.springboard"]) {
+    if (!success) {
+        VIWriteDebugStatus(
+            @"AutoFix: MobileGestalt plist WRITE FAILED"
+        );
         return;
     }
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        dispatch_after(
-            dispatch_time(
-                DISPATCH_TIME_NOW,
-                (int64_t)(3.0 * NSEC_PER_SEC)
-            ),
-            dispatch_get_main_queue(),
-            ^{
-                Class controllerClass =
-                    objc_getClass("SBSystemApertureController");
+    VIWriteDebugStatus(
+        @"AutoFix: MobileGestalt plist WRITE OK"
+    );
 
-                if (!controllerClass) {
-                    VIWriteDebugStatus(
-                        @"AutoFix: SBSystemApertureController NOT FOUND"
-                    );
-                    return;
-                }
+    /*
+     * 关键修复：
+     *
+     * MobileGestalt 是 SpringBoard 启动阶段使用的。
+     * 当前 SpringBoard 已经启动以后，
+     * 单纯修改 plist 不会重新建立 System Aperture。
+     *
+     * 所以第一次发现 subtype 不是 2556 时，
+     * 写入成功后自动退出并重新启动 SpringBoard。
+     *
+     * 下一次启动时：
+     *
+     *   MobileGestalt = 2556
+     *          ↓
+     *   SpringBoard 正常识别 Dynamic Island
+     *          ↓
+     *   SBSystemApertureController 初始化
+     *          ↓
+     *   SBSystemApertureWindow 创建
+     *          ↓
+     *   VisibleIsland 的 Window hook 接管
+     *
+     * 第二次进入这里时 subtype 已经是 2556，
+     * 因此不会再次 respring。
+     */
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            (int64_t)(1.0 * NSEC_PER_SEC)
+        ),
+        dispatch_get_main_queue(),
+        ^{
+            VIWriteDebugStatus(
+                @"AutoFix: Relaunching SpringBoard"
+            );
 
+            Class fbClass = objc_getClass("FBSystemService");
+
+            if (!fbClass) {
                 VIWriteDebugStatus(
-                    @"AutoFix: SBSystemApertureController FOUND"
+                    @"AutoFix: FBSystemService NOT FOUND"
                 );
-
-                /*
-                 * iOS 16.4:
-                 *
-                 * 不主动创建 Controller，
-                 * 不调用未知的私有方法，
-                 * 不重启 SpringBoard。
-                 *
-                 * 这里只等待 System Aperture 自己完成初始化，
-                 * 然后强制现有 Window 重新走完整的 layout。
-                 */
-
-                Class windowClass =
-                    objc_getClass("SBSystemApertureWindow");
-
-                if (!windowClass) {
-                    VIWriteDebugStatus(
-                        @"AutoFix: SBSystemApertureWindow NOT FOUND"
-                    );
-                    return;
-                }
-
-                VIWriteDebugStatus(
-                    @"AutoFix: SBSystemApertureWindow FOUND"
-                );
-
-                NSArray *scenes =
-                    [[UIApplication sharedApplication]
-                        connectedScenes].allObjects;
-
-                BOOL foundWindow = NO;
-
-                for (UIScene *scene in scenes) {
-
-                    if (![scene isKindOfClass:
-                            [UIWindowScene class]]) {
-                        continue;
-                    }
-
-                    UIWindowScene *windowScene =
-                        (UIWindowScene *)scene;
-
-                    for (UIWindow *window in windowScene.windows) {
-
-                        if (![window isKindOfClass:windowClass]) {
-                            continue;
-                        }
-
-                        foundWindow = YES;
-
-                        VIWriteDebugStatus(
-                            @"AutoFix: Existing Aperture Window FOUND"
-                        );
-
-                        /*
-                         * 关键：
-                         * 不只调用 layoutIfNeeded。
-                         *
-                         * 先让 UIKit 标记整个 Window 的
-                         * layout / display 状态。
-                         */
-                        [window setNeedsLayout];
-                        [window setNeedsDisplay];
-
-                        for (UIView *subview in window.subviews) {
-                            [subview setNeedsLayout];
-                            [subview setNeedsDisplay];
-                        }
-
-                        [window layoutIfNeeded];
-
-                        VIWriteDebugStatus(
-                            @"AutoFix: Aperture Window refresh triggered"
-                        );
-
-                        break;
-                    }
-
-                    if (foundWindow) {
-                        break;
-                    }
-                }
-
-                if (!foundWindow) {
-                    VIWriteDebugStatus(
-                        @"AutoFix: Aperture Window NOT FOUND"
-                    );
-                }
+                return;
             }
-        );
-    });
+
+            id service =
+                ((id (*)(id, SEL))objc_msgSend)(
+                    fbClass,
+                    @selector(sharedInstance)
+                );
+
+            if (!service) {
+                VIWriteDebugStatus(
+                    @"AutoFix: FBSystemService instance NOT FOUND"
+                );
+                return;
+            }
+
+            SEL relaunchSEL =
+                NSSelectorFromString(@"exitAndRelaunch:");
+
+            if (![service respondsToSelector:relaunchSEL]) {
+                VIWriteDebugStatus(
+                    @"AutoFix: exitAndRelaunch: NOT FOUND"
+                );
+                return;
+            }
+
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(
+                service,
+                relaunchSEL,
+                YES
+            );
+        }
+    );
 }
 
 %ctor{
@@ -1024,22 +1018,36 @@ static void VIRefreshExistingApertureWindow(void)
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 	    VIWriteDebugStatus(@"VisibleIsland SpringBoard loaded");
-		/*
-         * 关键：
-         * 在 SpringBoard 继续使用 MobileGestalt 之前，
-         * 直接 hook MGCopyAnswer。
+        /*
+         * 第一件事：
+         * hook MobileGestalt。
+         *
+         * 这样 SpringBoard 后续查询
+         * ArtworkDeviceSubType 时得到 2556。
          */
         VIHookMobileGestalt();
 
         /*
-         * 保留原来的 plist 修改。
-         * 这是持久化保险，不删除。
+         * 第二件事：
+         *
+         * 如果系统当前 MobileGestalt 还不是 2556，
+         * 写入 2556，然后自动重启 SpringBoard。
+         *
+         * 如果已经是 2556，
+         * 什么都不做，不会循环重启。
          */
         VIEnsureDynamicIslandEnabled();
 
-		VIRefreshExistingApertureWindow();
+        /*
+         * 不再主动寻找 / layout Window。
+         *
+         * 让 SpringBoard 自己完成
+         * SBSystemApertureController →
+         * SBSystemApertureWindow
+         * 的正常初始化。
+         */
 
-	    VIDebugApertureController();
+        VIDebugApertureController();
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
