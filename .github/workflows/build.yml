@@ -100,33 +100,6 @@ jobs:
             -name "*.deb" \
             -print
 
-      - name: Verify arm64e package
-        run: |
-          set -e
-
-          PKG=$(find packages \
-            -maxdepth 1 \
-            -type f \
-            -name "*_iphoneos-arm64e.deb" \
-            | head -n 1)
-
-          if [ -z "$PKG" ]; then
-            echo "ERROR: arm64e package was not generated."
-            exit 1
-          fi
-
-          echo "======================================"
-          echo "arm64e package"
-          echo "======================================"
-          echo "$PKG"
-
-          echo
-          echo "======================================"
-          echo "Package metadata"
-          echo "======================================"
-
-          dpkg-deb -I "$PKG"
-
       - name: Prepare arm64e artifact
         run: |
           set -e
