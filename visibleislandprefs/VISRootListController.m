@@ -163,7 +163,7 @@
         footerLabel.textAlignment = NSTextAlignmentCenter;
         footerLabel.textColor = [UIColor grayColor];
         footerLabel.font = [UIFont systemFontOfSize:14.0];
-        footerLabel.text = @"VisibleIsland v2.0 | Copyright © ethxnn88";
+        footerLabel.text = @"VisibleIsland v2.1 | Copyright © ethxnn88";
         return footerLabel;
     } else {
         return nil;
