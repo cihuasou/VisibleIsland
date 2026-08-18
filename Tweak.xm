@@ -2,6 +2,38 @@
 #import <Foundation/Foundation.h>
 #import <sys/sysctl.h>
 
+static void VIWriteDebugStatus(NSString *status)
+{
+    NSString *path =
+        @"/var/mobile/Library/Preferences/"
+         @"com.ethxnn88.visibleisland.debug";
+
+    NSDictionary *data = @{
+        @"status": status ?: @"unknown",
+        @"time": @([[NSDate date] timeIntervalSince1970])
+    };
+
+    [data writeToFile:path atomically:YES];
+}
+
+
+static void VIDebugApertureController(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    Class cls = objc_getClass("SBSystemApertureController");
+
+    if (!cls) {
+        VIWriteDebugStatus(@"SBSystemApertureController NOT FOUND");
+        return;
+    }
+
+    VIWriteDebugStatus(@"SBSystemApertureController FOUND");
+}
+
 CGFloat red = 0.0;
 CGFloat green = 0.0;
 CGFloat blue = 0.0;
@@ -787,38 +819,6 @@ static void VIEnsureDynamicIslandEnabled(void)
     plist[@"CacheExtra"] = cacheExtra;
 
     [plist writeToFile:plistPath atomically:YES];
-}
-
-static void VIWriteDebugStatus(NSString *status)
-{
-    NSString *path =
-        @"/var/mobile/Library/Preferences/"
-         @"com.ethxnn88.visibleisland.debug";
-
-    NSDictionary *data = @{
-        @"status": status ?: @"unknown",
-        @"time": @([[NSDate date] timeIntervalSince1970])
-    };
-
-    [data writeToFile:path atomically:YES];
-}
-
-
-static void VIDebugApertureController(void)
-{
-    if (![[NSBundle mainBundle].bundleIdentifier
-            isEqualToString:@"com.apple.springboard"]) {
-        return;
-    }
-
-    Class cls = objc_getClass("SBSystemApertureController");
-
-    if (!cls) {
-        VIWriteDebugStatus(@"SBSystemApertureController NOT FOUND");
-        return;
-    }
-
-    VIWriteDebugStatus(@"SBSystemApertureController FOUND");
 }
 
 %ctor{
