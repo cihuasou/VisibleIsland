@@ -36,3 +36,38 @@
 "Source Code" = "源代码";
 
 "Twitter" = "Twitter";
+
+"Moves all incoming notification banners to below the Dynamic Island for better visibility."
+    = "将所有收到的通知横幅移动到灵动岛下方，以获得更好的显示效果。";
+
+"Fix Notification Positioning" = "修正通知位置";
+
+"Custom Notification Positioning" = "自定义通知位置";
+
+"Use custom positioning if you use a custom island position."
+    = "如果使用自定义灵动岛位置，建议同时使用自定义通知位置。";
+
+"Use Custom Notification Position" = "使用自定义通知位置";
+
+"Custom Opacity" = "自定义透明度";
+
+"Use Custom Opacity" = "使用自定义透明度";
+
+"Custom Color" = "自定义颜色";
+
+"Red" = "红色";
+
+"Green" = "绿色";
+
+"Blue" = "蓝色";
+
+"Custom Island Scale" = "自定义灵动岛缩放";
+
+"If you choose to use a custom scale, setting a custom position is recommended for best results."
+    = "如果使用自定义缩放，建议同时设置自定义位置，以获得最佳效果。";
+
+"Use Custom Scale" = "使用自定义缩放";
+
+"Scale:" = "缩放：";
+
+"Enter Scale" = "输入缩放比例";
