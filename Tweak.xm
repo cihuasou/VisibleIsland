@@ -711,12 +711,61 @@ void preferencesChanged(){
     scale = [[prefs objectForKey:@"scale"] floatValue];
 }
 
+static void VIEnsureDynamicIslandEnabled(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    NSString *plistPath =
+        @"/var/containers/Shared/SystemGroup/"
+         @"systemgroup.com.apple.mobilegestaltcache/"
+         @"Library/Caches/"
+         @"com.apple.MobileGestalt.plist";
+
+    NSMutableDictionary *plist =
+        [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
+
+    if (!plist) {
+        return;
+    }
+
+    NSMutableDictionary *cacheExtra =
+        [plist[@"CacheExtra"] mutableCopy];
+
+    if (!cacheExtra) {
+        return;
+    }
+
+    NSMutableDictionary *deviceInfo =
+        [cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
+
+    if (!deviceInfo) {
+        return;
+    }
+
+    NSNumber *value =
+        deviceInfo[@"ArtworkDeviceSubType"];
+
+    if ([value intValue] == 2556) {
+        return;
+    }
+
+    deviceInfo[@"ArtworkDeviceSubType"] = @2556;
+    cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] = deviceInfo;
+    plist[@"CacheExtra"] = cacheExtra;
+
+    [plist writeToFile:plistPath atomically:YES];
+}
+
 %ctor{
 	preferencesChanged();
 
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+		VIEnsureDynamicIslandEnabled();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
 }
