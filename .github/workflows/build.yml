@@ -12,26 +12,25 @@ jobs:
 
     env:
       THEOS: ${{ github.workspace }}/theos
-      SDKVERSION: 16.5
 
     steps:
-      # ---------------------------------------------------------
-      # 1. Checkout source
-      # ---------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # 2. Install build dependencies
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # Install build dependencies
+      # --------------------------------------------------
       - name: Install dependencies
         run: |
-          brew update
-          brew install ldid
+          set -e
 
-      # ---------------------------------------------------------
-      # 3. Install Theos
-      # ---------------------------------------------------------
+          brew install ldid dpkg
+
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      # --------------------------------------------------
+      # Clone Theos
+      # --------------------------------------------------
       - name: Install Theos
         run: |
           set -e
@@ -42,211 +41,209 @@ jobs:
             https://github.com/theos/theos.git \
             "$THEOS"
 
-      # ---------------------------------------------------------
-      # 4. Install Theos dependencies
-      # ---------------------------------------------------------
+          chmod +x "$THEOS/bin/"*
+
+      # --------------------------------------------------
+      # Install Theos dependencies
+      # --------------------------------------------------
       - name: Install Theos dependencies
         run: |
           set -e
 
-          cd "$THEOS"
+          "$THEOS/bin/bootstrap"
 
-          brew install perl make dpkg
-
-          ./bin/install-theos
-
-      # ---------------------------------------------------------
-      # 5. Install iOS SDK
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # Install iOS SDK
+      # --------------------------------------------------
       - name: Install iOS 16.5 SDK
         run: |
           set -e
 
-          SDK_PATH="$THEOS/sdks/iPhoneOS16.5.sdk"
+          SDK="$THEOS/sdks/iPhoneOS16.5.sdk"
 
-          if [ -d "$SDK_PATH" ]; then
+          if [ -d "$SDK" ]; then
             echo "iPhoneOS16.5.sdk already exists"
             exit 0
           fi
+
+          rm -rf "$RUNNER_TEMP/theos-sdks"
 
           git clone \
             --depth 1 \
             https://github.com/theos/sdks.git \
             "$RUNNER_TEMP/theos-sdks"
 
+          if [ ! -d "$RUNNER_TEMP/theos-sdks/iPhoneOS16.5.sdk" ]; then
+            echo "ERROR: iPhoneOS16.5.sdk not found"
+            exit 1
+          fi
+
           cp -R \
             "$RUNNER_TEMP/theos-sdks/iPhoneOS16.5.sdk" \
-            "$SDK_PATH"
+            "$SDK"
 
-      # ---------------------------------------------------------
-      # 6. Install roothide support
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # Install roothide support
+      # --------------------------------------------------
       - name: Install roothide support
         run: |
           set -e
 
-          cd "$THEOS"
-
-          if [ -d "$THEOS/vendor/lib/roothide" ]; then
-            echo "roothide support already exists"
+          if grep -R "roothide" "$THEOS/makefiles" >/dev/null 2>&1; then
+            echo "Theos already contains roothide support"
           else
             echo "Installing roothide support..."
+
+            rm -rf "$RUNNER_TEMP/roothide-developer"
 
             git clone \
               --depth 1 \
               https://github.com/roothide/Developer.git \
               "$RUNNER_TEMP/roothide-developer"
 
-            if [ -f "$RUNNER_TEMP/roothide-developer/Makefile" ]; then
-              make -C "$RUNNER_TEMP/roothide-developer" install \
-                THEOS="$THEOS" || true
-            fi
+            find "$RUNNER_TEMP/roothide-developer" \
+              -maxdepth 2 \
+              -type f \
+              -name '*.mk' \
+              -print
           fi
 
-      # ---------------------------------------------------------
-      # 7. Verify build environment
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # Verify environment
+      # --------------------------------------------------
       - name: Verify environment
         run: |
           set -e
 
-          echo "=== macOS ==="
-          sw_vers
-
-          echo "=== Xcode ==="
+          echo "===== Xcode ====="
           xcodebuild -version
 
-          echo "=== Theos ==="
+          echo "===== Theos ====="
           echo "$THEOS"
 
-          echo "=== SDKs ==="
-          ls -la "$THEOS/sdks"
+          echo "===== SDK ====="
+          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-          echo "=== ldid ==="
+          echo "===== ldid ====="
           which ldid
           ldid --version || true
 
-          echo "=== dpkg ==="
+          echo "===== dpkg ====="
           which dpkg
-          dpkg --version
+          dpkg --version | head -n 1
 
-      # ---------------------------------------------------------
-      # 8. Clean old packages
-      # ---------------------------------------------------------
-      - name: Clean old packages
+          echo "===== Make ====="
+          make --version | head -n 1
+
+      # --------------------------------------------------
+      # Remove old packages
+      # --------------------------------------------------
+      - name: Clean old build output
         run: |
           set -e
 
           rm -rf packages
+          rm -rf artifact
+
           mkdir -p packages
+          mkdir -p artifact
 
           make clean || true
 
-      # ---------------------------------------------------------
-      # 9. Build Debian package
-      # ---------------------------------------------------------
-      - name: Build package
+      # --------------------------------------------------
+      # Build
+      # --------------------------------------------------
+      - name: Build Debian package
         run: |
           set -e
 
           make clean
+
           make package FINALPACKAGE=1
 
-      # ---------------------------------------------------------
-      # 10. Show generated packages
-      # ---------------------------------------------------------
-      - name: Show generated packages
+      # --------------------------------------------------
+      # Show packages generated by THIS build
+      # --------------------------------------------------
+      - name: List generated packages
         run: |
           set -e
 
-          echo "========================================"
-          echo "Generated packages:"
-          echo "========================================"
+          echo "======================================"
+          echo "Packages generated by current build:"
+          echo "======================================"
 
           find packages \
             -maxdepth 1 \
             -type f \
             -name '*.deb' \
-            -print \
-            -exec ls -lh {} \;
+            -print
 
-      # ---------------------------------------------------------
-      # 11. Verify arm64e package
-      # ---------------------------------------------------------
+          COUNT=$(find packages \
+            -maxdepth 1 \
+            -type f \
+            -name '*.deb' \
+            | wc -l | tr -d ' ')
+
+          echo "Package count: $COUNT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No Debian package generated"
+            exit 1
+          fi
+
+      # --------------------------------------------------
+      # Select arm64e package
+      # --------------------------------------------------
+      - name: Select arm64e package
+        run: |
+          set -e
+
+          PKG=$(find packages \
+            -maxdepth 1 \
+            -type f \
+            -name '*_iphoneos-arm64e.deb' \
+            | head -n 1)
+
+          if [ -z "$PKG" ]; then
+            echo "ERROR: arm64e package not found"
+            exit 1
+          fi
+
+          echo "Selected:"
+          echo "$PKG"
+
+          cp "$PKG" artifact/
+
+      # --------------------------------------------------
+      # Verify Debian package
+      # --------------------------------------------------
       - name: Verify arm64e package
         run: |
           set -e
 
-          PKG=$(find packages \
-            -maxdepth 1 \
+          PKG=$(find artifact \
             -type f \
-            -name '*_iphoneos-arm64e.deb' \
-            | sort \
-            | tail -n 1)
+            -name '*.deb' \
+            | head -n 1)
 
-          if [ -z "$PKG" ]; then
-            echo "ERROR: arm64e package not found"
-            exit 1
-          fi
-
-          echo "========================================"
-          echo "Selected arm64e package:"
-          echo "$PKG"
-          echo "========================================"
-
-          echo
-          echo "=== Debian metadata ==="
+          echo "===== Package information ====="
           dpkg-deb -I "$PKG"
 
           echo
-          echo "=== Package contents ==="
+          echo "===== Package contents ====="
           dpkg-deb -c "$PKG"
 
-      # ---------------------------------------------------------
-      # 12. Copy arm64e package to a clean output directory
-      # ---------------------------------------------------------
-      - name: Prepare artifact
-        run: |
-          set -e
+          echo
+          echo "===== Final artifact ====="
+          ls -lh "$PKG"
 
-          rm -rf artifact
-          mkdir -p artifact
-
-          PKG=$(find packages \
-            -maxdepth 1 \
-            -type f \
-            -name '*_iphoneos-arm64e.deb' \
-            | sort \
-            | tail -n 1)
-
-          if [ -z "$PKG" ]; then
-            echo "ERROR: arm64e package not found"
-            exit 1
-          fi
-
-          cp "$PKG" artifact/
-
-          echo "Artifact:"
-          ls -lh artifact/
-
-      # ---------------------------------------------------------
-      # 13. Upload arm64e package
-      # ---------------------------------------------------------
-      - name: Upload arm64e Debian package
+      # --------------------------------------------------
+      # Upload arm64e package
+      # --------------------------------------------------
+      - name: Upload arm64e package
         uses: actions/upload-artifact@v4
         with:
           name: VisibleIsland-arm64e
           path: artifact/*.deb
           if-no-files-found: error
           retention-days: 30
-
-      # ---------------------------------------------------------
-      # 14. Upload all packages for debugging
-      # ---------------------------------------------------------
-      - name: Upload all Debian packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: VisibleIsland-all-packages
-          path: packages/*.deb
-          if-no-files-found: error
-          retention-days: 7
