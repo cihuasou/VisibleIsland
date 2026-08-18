@@ -82,6 +82,23 @@ static BOOL lineDisabled;
 
 %hook SBSystemApertureWindow
 
+- (void)didMoveToWindow
+{
+    %orig;
+
+    if (self.window) {
+
+        VIWriteDebugStatus(
+            @"SBSystemApertureWindow didMoveToWindow"
+        );
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setNeedsLayout];
+            [self layoutIfNeeded];
+        });
+    }
+}
+
 - (void)layoutSubviews {
     %orig;
     if (scaleEnabled && fixEnabled) {
@@ -683,6 +700,19 @@ static BOOL lineDisabled;
 
 %end
 
+%hook SBSystemApertureController
+
+- (id)init
+{
+    id result = %orig;
+
+    VIWriteDebugStatus(@"SBSystemApertureController init");
+
+    return result;
+}
+
+%end
+
 static void respring(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
@@ -759,12 +789,47 @@ static void VIEnsureDynamicIslandEnabled(void)
     [plist writeToFile:plistPath atomically:YES];
 }
 
+static void VIWriteDebugStatus(NSString *status)
+{
+    NSString *path =
+        @"/var/mobile/Library/Preferences/"
+         @"com.ethxnn88.visibleisland.debug";
+
+    NSDictionary *data = @{
+        @"status": status ?: @"unknown",
+        @"time": @([[NSDate date] timeIntervalSince1970])
+    };
+
+    [data writeToFile:path atomically:YES];
+}
+
+
+static void VIDebugApertureController(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    Class cls = objc_getClass("SBSystemApertureController");
+
+    if (!cls) {
+        VIWriteDebugStatus(@"SBSystemApertureController NOT FOUND");
+        return;
+    }
+
+    VIWriteDebugStatus(@"SBSystemApertureController FOUND");
+}
+
 %ctor{
 	preferencesChanged();
 
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+	    VIWriteDebugStatus(@"VisibleIsland SpringBoard loaded");
+	    VIDebugApertureController();
+
 		VIEnsureDynamicIslandEnabled();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
