@@ -5,54 +5,6 @@
 #import <dlfcn.h>
 #import <substrate.h>
 
-static void VIWriteDebugStatus(NSString *status)
-{
-    NSString *path =
-        @"/var/mobile/Library/Preferences/"
-         @"com.ethxnn88.visibleisland.debug";
-
-    NSMutableArray *logs =
-        [NSMutableArray arrayWithContentsOfFile:path];
-
-    if (!logs) {
-        logs = [NSMutableArray array];
-    }
-
-    NSString *entry = [NSString stringWithFormat:
-        @"%.3f  %@",
-        [[NSDate date] timeIntervalSince1970],
-        status ?: @"unknown"
-    ];
-
-    [logs addObject:entry];
-
-    // 最多保留 50 条，避免文件无限增长
-    if (logs.count > 50) {
-        [logs removeObjectsInRange:
-            NSMakeRange(0, logs.count - 50)];
-    }
-
-    [logs writeToFile:path atomically:YES];
-}
-
-
-static void VIDebugApertureController(void)
-{
-    if (![[NSBundle mainBundle].bundleIdentifier
-            isEqualToString:@"com.apple.springboard"]) {
-        return;
-    }
-
-    Class cls = objc_getClass("SBSystemApertureController");
-
-    if (!cls) {
-        VIWriteDebugStatus(@"SBSystemApertureController NOT FOUND");
-        return;
-    }
-
-    VIWriteDebugStatus(@"SBSystemApertureController FOUND");
-}
-
 CGFloat red = 0.0;
 CGFloat green = 0.0;
 CGFloat blue = 0.0;
@@ -132,24 +84,6 @@ static BOOL lineDisabled;
 @end
 
 %hook SBSystemApertureWindow
-
-- (void)didMoveToWindow
-{
-    %orig;
-
-    if (!self.window) {
-        return;
-    }
-
-    VIWriteDebugStatus(@"SBSystemApertureWindow didMoveToWindow");
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self setNeedsLayout];
-        [self layoutIfNeeded];
-
-        VIWriteDebugStatus(@"SBSystemApertureWindow layout triggered");
-    });
-}
 
 - (void)layoutSubviews {
     %orig;
@@ -752,19 +686,6 @@ static BOOL lineDisabled;
 
 %end
 
-%hook SBSystemApertureController
-
-- (id)init
-{
-    id result = %orig;
-
-    VIWriteDebugStatus(@"SBSystemApertureController init");
-
-    return result;
-}
-
-%end
-
 static void respring(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
   [[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
@@ -829,14 +750,12 @@ static void VIHookMobileGestalt(void)
     );
 
     if (!handle) {
-        VIWriteDebugStatus(@"MobileGestalt dlopen FAILED");
         return;
     }
 
     void *symbol = dlsym(handle, "MGCopyAnswer");
 
     if (!symbol) {
-        VIWriteDebugStatus(@"MGCopyAnswer dlsym FAILED");
         return;
     }
 
@@ -845,8 +764,6 @@ static void VIHookMobileGestalt(void)
         (void *)VIHookMGCopyAnswer,
         (void **)&VIOrigMGCopyAnswer
     );
-
-    VIWriteDebugStatus(@"MGCopyAnswer hooked");
 }
 
 static void VIEnsureDynamicIslandEnabled(void)
@@ -866,9 +783,6 @@ static void VIEnsureDynamicIslandEnabled(void)
         [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
 
     if (!plist) {
-        VIWriteDebugStatus(
-            @"AutoFix: MobileGestalt plist NOT FOUND"
-        );
         return;
     }
 
@@ -876,9 +790,6 @@ static void VIEnsureDynamicIslandEnabled(void)
         [plist[@"CacheExtra"] mutableCopy];
 
     if (!cacheExtra) {
-        VIWriteDebugStatus(
-            @"AutoFix: CacheExtra NOT FOUND"
-        );
         return;
     }
 
@@ -886,9 +797,6 @@ static void VIEnsureDynamicIslandEnabled(void)
         [cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
 
     if (!deviceInfo) {
-        VIWriteDebugStatus(
-            @"AutoFix: DeviceInfo NOT FOUND"
-        );
         return;
     }
 
@@ -896,68 +804,28 @@ static void VIEnsureDynamicIslandEnabled(void)
         deviceInfo[@"ArtworkDeviceSubType"];
 
     /*
-     * 已经是 Dynamic Island 对应的 subtype。
-     *
-     * 非常重要：
-     * 如果已经是 2556，绝对不要再次 respring，
-     * 防止 SpringBoard 无限循环重启。
+     * 已经是 Dynamic Island 设备，不做任何操作。
      */
     if ([value intValue] == 2556) {
-        VIWriteDebugStatus(
-            @"AutoFix: ArtworkDeviceSubType already 2556"
-        );
         return;
     }
 
-    VIWriteDebugStatus(
-        [NSString stringWithFormat:
-            @"AutoFix: ArtworkDeviceSubType changing %@ -> 2556",
-            value ?: @"nil"]
-    );
-
+    /*
+     * 将设备伪装成 Dynamic Island 设备。
+     */
     deviceInfo[@"ArtworkDeviceSubType"] = @2556;
 
     cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] = deviceInfo;
     plist[@"CacheExtra"] = cacheExtra;
 
-    BOOL success =
-        [plist writeToFile:plistPath atomically:YES];
-
-    if (!success) {
-        VIWriteDebugStatus(
-            @"AutoFix: MobileGestalt plist WRITE FAILED"
-        );
+    if (![plist writeToFile:plistPath atomically:YES]) {
         return;
     }
 
-    VIWriteDebugStatus(
-        @"AutoFix: MobileGestalt plist WRITE OK"
-    );
-
     /*
-     * 关键修复：
-     *
-     * MobileGestalt 是 SpringBoard 启动阶段使用的。
-     * 当前 SpringBoard 已经启动以后，
-     * 单纯修改 plist 不会重新建立 System Aperture。
-     *
-     * 所以第一次发现 subtype 不是 2556 时，
-     * 写入成功后自动退出并重新启动 SpringBoard。
-     *
-     * 下一次启动时：
-     *
-     *   MobileGestalt = 2556
-     *          ↓
-     *   SpringBoard 正常识别 Dynamic Island
-     *          ↓
-     *   SBSystemApertureController 初始化
-     *          ↓
-     *   SBSystemApertureWindow 创建
-     *          ↓
-     *   VisibleIsland 的 Window hook 接管
-     *
-     * 第二次进入这里时 subtype 已经是 2556，
-     * 因此不会再次 respring。
+     * MobileGestalt 在 SpringBoard 启动阶段被读取。
+     * 修改后需要重新启动 SpringBoard 才能让
+     * System Aperture 按新的设备能力重新初始化。
      */
     dispatch_after(
         dispatch_time(
@@ -966,47 +834,12 @@ static void VIEnsureDynamicIslandEnabled(void)
         ),
         dispatch_get_main_queue(),
         ^{
-            VIWriteDebugStatus(
-                @"AutoFix: Relaunching SpringBoard"
-            );
+            FBSystemService *service =
+                [FBSystemService sharedInstance];
 
-            Class fbClass = objc_getClass("FBSystemService");
-
-            if (!fbClass) {
-                VIWriteDebugStatus(
-                    @"AutoFix: FBSystemService NOT FOUND"
-                );
-                return;
+            if (service) {
+                [service exitAndRelaunch:YES];
             }
-
-            id service =
-                ((id (*)(id, SEL))objc_msgSend)(
-                    fbClass,
-                    @selector(sharedInstance)
-                );
-
-            if (!service) {
-                VIWriteDebugStatus(
-                    @"AutoFix: FBSystemService instance NOT FOUND"
-                );
-                return;
-            }
-
-            SEL relaunchSEL =
-                NSSelectorFromString(@"exitAndRelaunch:");
-
-            if (![service respondsToSelector:relaunchSEL]) {
-                VIWriteDebugStatus(
-                    @"AutoFix: exitAndRelaunch: NOT FOUND"
-                );
-                return;
-            }
-
-            ((void (*)(id, SEL, BOOL))objc_msgSend)(
-                service,
-                relaunchSEL,
-                YES
-            );
         }
     );
 }
@@ -1017,7 +850,6 @@ static void VIEnsureDynamicIslandEnabled(void)
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-	    VIWriteDebugStatus(@"VisibleIsland SpringBoard loaded");
         /*
          * 第一件事：
          * hook MobileGestalt。
@@ -1037,17 +869,6 @@ static void VIEnsureDynamicIslandEnabled(void)
          * 什么都不做，不会循环重启。
          */
         VIEnsureDynamicIslandEnabled();
-
-        /*
-         * 不再主动寻找 / layout Window。
-         *
-         * 让 SpringBoard 自己完成
-         * SBSystemApertureController →
-         * SBSystemApertureWindow
-         * 的正常初始化。
-         */
-
-        VIDebugApertureController();
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
