@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <sys/sysctl.h>
+#import <objc/runtime.h>
 
 static void VIWriteDebugStatus(NSString *status)
 {
