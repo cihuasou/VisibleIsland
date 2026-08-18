@@ -119,17 +119,18 @@ static BOOL lineDisabled;
 {
     %orig;
 
-    if (self.window) {
-
-        VIWriteDebugStatus(
-            @"SBSystemApertureWindow didMoveToWindow"
-        );
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self setNeedsLayout];
-            [self layoutIfNeeded];
-        });
+    if (!self.window) {
+        return;
     }
+
+    VIWriteDebugStatus(@"SBSystemApertureWindow didMoveToWindow");
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self setNeedsLayout];
+        [self layoutIfNeeded];
+
+        VIWriteDebugStatus(@"SBSystemApertureWindow layout triggered");
+    });
 }
 
 - (void)layoutSubviews {
