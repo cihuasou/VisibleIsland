@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <sys/sysctl.h>
 #import <dlfcn.h>
+#import <substrate.h>
 
 CGFloat red = 0.0;
 CGFloat green = 0.0;
@@ -712,16 +713,25 @@ void preferencesChanged(){
     scale = [[prefs objectForKey:@"scale"] floatValue];
 }
 
-typedef CFTypeRef (*MGCopyAnswerFunc)(CFStringRef key);
+typedef CFTypeRef (*MGCopyAnswerInternalFunc)(
+    CFStringRef key,
+    uint32_t *typeCode
+);
 
-static MGCopyAnswerFunc originalMGCopyAnswer = NULL;
+static MGCopyAnswerInternalFunc origMGCopyAnswerInternal = NULL;
 
-static CFTypeRef hookedMGCopyAnswer(CFStringRef key)
-{
+static CFTypeRef hookedMGCopyAnswerInternal(
+    CFStringRef key,
+    uint32_t *typeCode
+) {
     if (key &&
         CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
 
         int value = 2556;
+
+        if (typeCode) {
+            *typeCode = 0;
+        }
 
         return CFNumberCreate(
             kCFAllocatorDefault,
@@ -730,40 +740,88 @@ static CFTypeRef hookedMGCopyAnswer(CFStringRef key)
         );
     }
 
-    if (originalMGCopyAnswer) {
-        return originalMGCopyAnswer(key);
+    if (origMGCopyAnswerInternal) {
+        return origMGCopyAnswerInternal(key, typeCode);
     }
 
     return NULL;
 }
 
-static void installDynamicIslandMGHook(void)
+static void installArtworkDeviceSubTypeHook(void)
 {
     if (![[NSBundle mainBundle].bundleIdentifier
             isEqualToString:@"com.apple.springboard"]) {
         return;
     }
 
-    void *handle =
-        dlopen("/System/Library/PrivateFrameworks/MobileGestalt.framework/MobileGestalt",
-               RTLD_LAZY);
+    void *handle = dlopen(
+        "/usr/lib/libMobileGestalt.dylib",
+        RTLD_LAZY
+    );
 
     if (!handle) {
         return;
     }
 
-    void *symbol =
+    void *mgCopyAnswer =
         dlsym(handle, "MGCopyAnswer");
 
-    if (!symbol) {
-        dlclose(handle);
+    if (!mgCopyAnswer) {
         return;
     }
 
+    uint8_t *p = (uint8_t *)mgCopyAnswer;
+
+    /*
+     * iOS 15/16 arm64e:
+     *
+     * MGCopyAnswer is a small trampoline.
+     * The actual implementation is reached through
+     * the branch instruction immediately after the
+     * initial MOV.
+     */
+
+    if (p[0] != 0x01 ||
+        p[1] != 0x00 ||
+        p[2] != 0x80 ||
+        p[3] != 0xD2) {
+        return;
+    }
+
+    uint32_t instruction = 0;
+
+    memcpy(
+        &instruction,
+        p + 4,
+        sizeof(instruction)
+    );
+
+    /*
+     * ARM64 unconditional branch:
+     *
+     * 0x14000000
+     */
+
+    if ((instruction & 0xFC000000) != 0x14000000) {
+        return;
+    }
+
+    int32_t offset =
+        (int32_t)(instruction & 0x03FFFFFF);
+
+    if (offset & 0x02000000) {
+        offset |= 0xFC000000;
+    }
+
+    offset <<= 2;
+
+    void *internal =
+        (void *)(p + 4 + offset);
+
     MSHookFunction(
-        symbol,
-        (void *)&hookedMGCopyAnswer,
-        (void **)&originalMGCopyAnswer
+        internal,
+        (void *)hookedMGCopyAnswerInternal,
+        (void **)&origMGCopyAnswerInternal
     );
 }
 
@@ -773,7 +831,7 @@ static void installDynamicIslandMGHook(void)
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-		installDynamicIslandMGHook();
+		installArtworkDeviceSubTypeHook();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
 }
