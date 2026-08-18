@@ -4,7 +4,7 @@
 
 static NSString *mobileGestaltPath(void)
 {
-    return jbroot(
+    return rootfs(
         @"/var/containers/Shared/SystemGroup/"
          @"systemgroup.com.apple.mobilegestaltcache/"
          @"Library/Caches/"
