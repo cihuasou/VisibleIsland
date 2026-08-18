@@ -907,28 +907,54 @@ static void VIRefreshExistingApertureWindow(void)
         dispatch_after(
             dispatch_time(
                 DISPATCH_TIME_NOW,
-                (int64_t)(2.0 * NSEC_PER_SEC)
+                (int64_t)(3.0 * NSEC_PER_SEC)
             ),
             dispatch_get_main_queue(),
             ^{
+                Class controllerClass =
+                    objc_getClass("SBSystemApertureController");
+
+                if (!controllerClass) {
+                    VIWriteDebugStatus(
+                        @"AutoFix: SBSystemApertureController NOT FOUND"
+                    );
+                    return;
+                }
+
+                VIWriteDebugStatus(
+                    @"AutoFix: SBSystemApertureController FOUND"
+                );
+
+                /*
+                 * iOS 16.4:
+                 *
+                 * 不主动创建 Controller，
+                 * 不调用未知的私有方法，
+                 * 不重启 SpringBoard。
+                 *
+                 * 这里只等待 System Aperture 自己完成初始化，
+                 * 然后强制现有 Window 重新走完整的 layout。
+                 */
 
                 Class windowClass =
                     objc_getClass("SBSystemApertureWindow");
 
                 if (!windowClass) {
                     VIWriteDebugStatus(
-                        @"SBSystemApertureWindow class NOT FOUND"
+                        @"AutoFix: SBSystemApertureWindow NOT FOUND"
                     );
                     return;
                 }
 
                 VIWriteDebugStatus(
-                    @"SBSystemApertureWindow class FOUND"
+                    @"AutoFix: SBSystemApertureWindow FOUND"
                 );
 
                 NSArray *scenes =
                     [[UIApplication sharedApplication]
                         connectedScenes].allObjects;
+
+                BOOL foundWindow = NO;
 
                 for (UIScene *scene in scenes) {
 
@@ -940,30 +966,52 @@ static void VIRefreshExistingApertureWindow(void)
                     UIWindowScene *windowScene =
                         (UIWindowScene *)scene;
 
-                    for (UIWindow *window in
-                         windowScene.windows) {
+                    for (UIWindow *window in windowScene.windows) {
 
-                        if ([window isKindOfClass:windowClass]) {
-
-                            VIWriteDebugStatus(
-                                @"Existing SBSystemApertureWindow FOUND"
-                            );
-
-                            [window setNeedsLayout];
-                            [window layoutIfNeeded];
-
-                            VIWriteDebugStatus(
-                                @"Existing SBSystemApertureWindow layout triggered"
-                            );
-
-                            return;
+                        if (![window isKindOfClass:windowClass]) {
+                            continue;
                         }
+
+                        foundWindow = YES;
+
+                        VIWriteDebugStatus(
+                            @"AutoFix: Existing Aperture Window FOUND"
+                        );
+
+                        /*
+                         * 关键：
+                         * 不只调用 layoutIfNeeded。
+                         *
+                         * 先让 UIKit 标记整个 Window 的
+                         * layout / display 状态。
+                         */
+                        [window setNeedsLayout];
+                        [window setNeedsDisplay];
+
+                        for (UIView *subview in window.subviews) {
+                            [subview setNeedsLayout];
+                            [subview setNeedsDisplay];
+                        }
+
+                        [window layoutIfNeeded];
+
+                        VIWriteDebugStatus(
+                            @"AutoFix: Aperture Window refresh triggered"
+                        );
+
+                        break;
+                    }
+
+                    if (foundWindow) {
+                        break;
                     }
                 }
 
-                VIWriteDebugStatus(
-                    @"Existing SBSystemApertureWindow NOT FOUND"
-                );
+                if (!foundWindow) {
+                    VIWriteDebugStatus(
+                        @"AutoFix: Aperture Window NOT FOUND"
+                    );
+                }
             }
         );
     });
