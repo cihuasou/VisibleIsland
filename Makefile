@@ -16,4 +16,5 @@ VisibleIsland_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += visibleislandprefs
+SUBPROJECTS += visibleislandautofix
 include $(THEOS_MAKE_PATH)/aggregate.mk
