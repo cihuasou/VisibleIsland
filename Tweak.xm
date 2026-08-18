@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <sys/sysctl.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 
 static void VIWriteDebugStatus(NSString *status)
 {
@@ -775,6 +776,62 @@ void preferencesChanged(){
     scale = [[prefs objectForKey:@"scale"] floatValue];
 }
 
+static CFTypeRef (*VIOrigMGCopyAnswer)(CFStringRef key);
+
+static CFTypeRef VIHookMGCopyAnswer(CFStringRef key)
+{
+    if (key &&
+        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+
+        int value = 2556;
+
+        return CFNumberCreate(
+            kCFAllocatorDefault,
+            kCFNumberIntType,
+            &value
+        );
+    }
+
+    if (VIOrigMGCopyAnswer) {
+        return VIOrigMGCopyAnswer(key);
+    }
+
+    return NULL;
+}
+
+static void VIHookMobileGestalt(void)
+{
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    void *handle = dlopen(
+        "/usr/lib/libMobileGestalt.dylib",
+        RTLD_LAZY
+    );
+
+    if (!handle) {
+        VIWriteDebugStatus(@"MobileGestalt dlopen FAILED");
+        return;
+    }
+
+    void *symbol = dlsym(handle, "MGCopyAnswer");
+
+    if (!symbol) {
+        VIWriteDebugStatus(@"MGCopyAnswer dlsym FAILED");
+        return;
+    }
+
+    MSHookFunction(
+        symbol,
+        (void *)VIHookMGCopyAnswer,
+        (void **)&VIOrigMGCopyAnswer
+    );
+
+    VIWriteDebugStatus(@"MGCopyAnswer hooked");
+}
+
 static void VIEnsureDynamicIslandEnabled(void)
 {
     if (![[NSBundle mainBundle].bundleIdentifier
@@ -830,9 +887,21 @@ static void VIEnsureDynamicIslandEnabled(void)
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 	    VIWriteDebugStatus(@"VisibleIsland SpringBoard loaded");
+		/*
+         * 关键：
+         * 在 SpringBoard 继续使用 MobileGestalt 之前，
+         * 直接 hook MGCopyAnswer。
+         */
+        VIHookMobileGestalt();
+
+        /*
+         * 保留原来的 plist 修改。
+         * 这是持久化保险，不删除。
+         */
+        VIEnsureDynamicIslandEnabled();
+
 	    VIDebugApertureController();
 
-		VIEnsureDynamicIslandEnabled();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
 }
