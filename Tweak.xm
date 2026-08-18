@@ -332,7 +332,7 @@ static BOOL lineDisabled;
         frame.origin.y = yPos;
         frame.origin.x = xPos;
         self.frame = frame;
-    } else if (scaleEnabled && !posEnabled | scaleEnabled && !fixEnabled) {
+    } else if (scaleEnabled && !posEnabled && !fixEnabled) {
         self.transform = CGAffineTransformMakeScale(scale, scale);
     }
 }
