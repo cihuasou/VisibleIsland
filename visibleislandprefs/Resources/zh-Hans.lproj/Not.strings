@@ -1,4 +1,10 @@
 "Notifications" = "通知";
+"Moves all incoming notification banners to below the Dynamic Island for better visibility."
+    = "将所有收到的通知横幅移动到灵动岛下方，以获得更好的显示效果。";
+"Fix Notification Positioning" = "修正通知位置";
+"Custom Notification Positioning" = "自定义通知位置";
+"Use custom positioning if you use a custom island position."
+    = "如果使用自定义灵动岛位置，建议同时使用自定义通知位置。";
 "Move Notifications Below Island" = "将通知移动到灵动岛下方";
 "Use Custom Notification Position" = "使用自定义通知位置";
 "X Position:" = "X 位置：";
