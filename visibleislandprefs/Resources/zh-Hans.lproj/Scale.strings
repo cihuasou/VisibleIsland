@@ -1,4 +1,8 @@
 "Scale" = "缩放";
+"Custom Island Scale" = "自定义灵动岛缩放";
+"If you choose to use a custom scale, setting a custom position is recommended for best results."
+    = "如果使用自定义缩放，建议同时设置自定义位置，以获得最佳效果。";
+"Use Custom Scale" = "使用自定义缩放";
 "Enable Custom Scale" = "启用自定义缩放";
 "Scale:" = "缩放比例：";
 "Save" = "保存";
