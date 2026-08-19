@@ -766,6 +766,17 @@ static void VIHookMobileGestalt(void)
     );
 }
 
+static void VIInitializeIslandEnabled(void)
+{
+    NSDictionary *prefs =
+        [NSDictionary dictionaryWithContentsOfFile:
+            @"/var/mobile/Library/Preferences/com.ethxnn88.visibleislandprefs.plist"];
+
+    if (prefs) {
+        islandEnabled =
+            [[prefs objectForKey:@"islandEnabled"] boolValue];
+    }
+}
 
 %ctor{
 	preferencesChanged();
@@ -773,6 +784,9 @@ static void VIHookMobileGestalt(void)
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+
+		VIInitializeIslandEnabled();
+
         /*
          * 第一件事：
          * hook MobileGestalt。
@@ -781,11 +795,6 @@ static void VIHookMobileGestalt(void)
          * ArtworkDeviceSubType 时得到 2556。
          */
         VIHookMobileGestalt();
-
-		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-		               dispatch_get_main_queue(), ^{
-		    preferencesChanged();
-		});
 
         /*
          * 第二件事：
