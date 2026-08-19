@@ -871,10 +871,10 @@ static void VIEnsureDynamicIslandEnabled(void)
          *
          * 如果已经是 2556，
          * 什么都不做，不会循环重启。
+         * if (islandEnabled) {
+		 *    VIEnsureDynamicIslandEnabled();
+		 *}
          */
-        if (islandEnabled) {
-		    VIEnsureDynamicIslandEnabled();
-		}
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
