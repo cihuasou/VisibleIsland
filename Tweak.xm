@@ -719,10 +719,10 @@ static CFTypeRef (*VIOrigMGCopyAnswer)(CFStringRef key);
 static CFTypeRef VIHookMGCopyAnswer(CFStringRef key)
 {
     if (key &&
-        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+        CFEqual(key, CFSTR("ArtworkDeviceSubType")) &&
+        islandEnabled) {
 
         int value = 2556;
-
         return CFNumberCreate(
             kCFAllocatorDefault,
             kCFNumberIntType,
@@ -768,6 +768,10 @@ static void VIHookMobileGestalt(void)
 
 static void VIEnsureDynamicIslandEnabled(void)
 {
+	if (!islandEnabled) {
+	    return;
+	}
+
     if (![[NSBundle mainBundle].bundleIdentifier
             isEqualToString:@"com.apple.springboard"]) {
         return;
@@ -868,7 +872,9 @@ static void VIEnsureDynamicIslandEnabled(void)
          * 如果已经是 2556，
          * 什么都不做，不会循环重启。
          */
-        VIEnsureDynamicIslandEnabled();
+        if (islandEnabled) {
+		    VIEnsureDynamicIslandEnabled();
+		}
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
