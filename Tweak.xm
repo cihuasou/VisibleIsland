@@ -695,7 +695,6 @@ void preferencesChanged(){
 
     fixEnabled = (prefs && [prefs objectForKey:@"fixEnabled"] ? [[prefs valueForKey:@"fixEnabled"] boolValue] : NO );
     islandEnabled = (prefs && [prefs objectForKey:@"islandEnabled"] ? [[prefs valueForKey:@"islandEnabled"] boolValue] : NO );
-	NSLog(@"[VisibleIsland] preferencesChanged: islandEnabled=%d prefs=%@", islandEnabled, prefs);
     posEnabled = (prefs && [prefs objectForKey:@"posEnabled"] ? [[prefs valueForKey:@"posEnabled"] boolValue] : NO );
     hideEnabled = (prefs && [prefs objectForKey:@"hideEnabled"] ? [[prefs valueForKey:@"hideEnabled"] boolValue] : NO );
     notificationFix = (prefs && [prefs objectForKey:@"notificationFix"] ? [[prefs valueForKey:@"notificationFix"] boolValue] : NO );
@@ -720,24 +719,15 @@ static CFTypeRef (*VIOrigMGCopyAnswer)(CFStringRef key);
 static CFTypeRef VIHookMGCopyAnswer(CFStringRef key)
 {
     if (key &&
-        CFEqual(key, CFSTR("ArtworkDeviceSubType"))) {
+        CFEqual(key, CFSTR("ArtworkDeviceSubType")) &&
+        islandEnabled) {
 
-        NSDictionary *prefs =
-            [NSDictionary dictionaryWithContentsOfFile:
-                @"/var/mobile/Library/Preferences/com.ethxnn88.visibleislandprefs.plist"];
-
-        BOOL enabled =
-            [[prefs objectForKey:@"islandEnabled"] boolValue];
-
-        if (enabled) {
-            int value = 2556;
-
-            return CFNumberCreate(
-                kCFAllocatorDefault,
-                kCFNumberIntType,
-                &value
-            );
-        }
+        int value = 2556;
+        return CFNumberCreate(
+            kCFAllocatorDefault,
+            kCFNumberIntType,
+            &value
+        );
     }
 
     if (VIOrigMGCopyAnswer) {
@@ -774,8 +764,88 @@ static void VIHookMobileGestalt(void)
         (void *)VIHookMGCopyAnswer,
         (void **)&VIOrigMGCopyAnswer
     );
+}
 
-	dlclose(handle);
+static void VIEnsureDynamicIslandEnabled(void)
+{
+	if (!islandEnabled) {
+	    return;
+	}
+
+    if (![[NSBundle mainBundle].bundleIdentifier
+            isEqualToString:@"com.apple.springboard"]) {
+        return;
+    }
+
+    NSString *plistPath =
+        @"/var/containers/Shared/SystemGroup/"
+         @"systemgroup.com.apple.mobilegestaltcache/"
+         @"Library/Caches/"
+         @"com.apple.MobileGestalt.plist";
+
+    NSMutableDictionary *plist =
+        [NSMutableDictionary dictionaryWithContentsOfFile:plistPath];
+
+    if (!plist) {
+        return;
+    }
+
+    NSMutableDictionary *cacheExtra =
+        [plist[@"CacheExtra"] mutableCopy];
+
+    if (!cacheExtra) {
+        return;
+    }
+
+    NSMutableDictionary *deviceInfo =
+        [cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] mutableCopy];
+
+    if (!deviceInfo) {
+        return;
+    }
+
+    NSNumber *value =
+        deviceInfo[@"ArtworkDeviceSubType"];
+
+    /*
+     * 已经是 Dynamic Island 设备，不做任何操作。
+     */
+    if ([value intValue] == 2556) {
+        return;
+    }
+
+    /*
+     * 将设备伪装成 Dynamic Island 设备。
+     */
+    deviceInfo[@"ArtworkDeviceSubType"] = @2556;
+
+    cacheExtra[@"oPeik/9e8lQWMszEjbPzng"] = deviceInfo;
+    plist[@"CacheExtra"] = cacheExtra;
+
+    if (![plist writeToFile:plistPath atomically:YES]) {
+        return;
+    }
+
+    /*
+     * MobileGestalt 在 SpringBoard 启动阶段被读取。
+     * 修改后需要重新启动 SpringBoard 才能让
+     * System Aperture 按新的设备能力重新初始化。
+     */
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            (int64_t)(1.0 * NSEC_PER_SEC)
+        ),
+        dispatch_get_main_queue(),
+        ^{
+            FBSystemService *service =
+                [FBSystemService sharedInstance];
+
+            if (service) {
+                [service exitAndRelaunch:YES];
+            }
+        }
+    );
 }
 
 %ctor{
@@ -784,8 +854,6 @@ static void VIHookMobileGestalt(void)
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)preferencesChanged, CFSTR("com.ethxnn88.visibleislandprefs-updated"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-
-
         /*
          * 第一件事：
          * hook MobileGestalt。
@@ -803,10 +871,10 @@ static void VIHookMobileGestalt(void)
          *
          * 如果已经是 2556，
          * 什么都不做，不会循环重启。
-         * if (islandEnabled) {
-		 *    VIEnsureDynamicIslandEnabled();
-		 *}
          */
+        if (islandEnabled) {
+		    VIEnsureDynamicIslandEnabled();
+		}
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.ethxnn88.visibleislandprefs-respring"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     }
