@@ -17,5 +17,4 @@ VisibleIsland_PRIVATE_FRAMEWORKS = FrontBoard
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += visibleislandprefs
-SUBPROJECTS += visibleislandautofix
 include $(THEOS_MAKE_PATH)/aggregate.mk
