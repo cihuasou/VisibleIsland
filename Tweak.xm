@@ -766,16 +766,44 @@ static void VIHookMobileGestalt(void)
     );
 }
 
-static void VIInitializeIslandEnabled(void)
+static void VIAutoRespringAfterBoot(void)
 {
-    NSDictionary *prefs =
-        [NSDictionary dictionaryWithContentsOfFile:
-            @"/var/mobile/Library/Preferences/com.ethxnn88.visibleislandprefs.plist"];
-
-    if (prefs) {
-        islandEnabled =
-            [[prefs objectForKey:@"islandEnabled"] boolValue];
+    if (!islandEnabled) {
+        return;
     }
+
+    NSString *bootKey = @"VisibleIslandLastBootTime";
+
+    struct timeval boottime;
+    size_t size = sizeof(boottime);
+
+    if (sysctlbyname("kern.boottime", &boottime, &size, NULL, 0) != 0) {
+        return;
+    }
+
+    NSNumber *currentBootTime = @(boottime.tv_sec);
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSNumber *lastBootTime = [defaults objectForKey:bootKey];
+
+    if (lastBootTime &&
+        [lastBootTime longLongValue] == [currentBootTime longLongValue]) {
+        return;
+    }
+
+    [defaults setObject:currentBootTime forKey:bootKey];
+    [defaults synchronize];
+
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(),
+        ^{
+            FBSystemService *service = [FBSystemService sharedInstance];
+
+            if (service) {
+                [service exitAndRelaunch:YES];
+            }
+        }
+    );
 }
 
 %ctor{
@@ -785,7 +813,6 @@ static void VIInitializeIslandEnabled(void)
 
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 
-		VIInitializeIslandEnabled();
 
         /*
          * 第一件事：
@@ -795,7 +822,7 @@ static void VIInitializeIslandEnabled(void)
          * ArtworkDeviceSubType 时得到 2556。
          */
         VIHookMobileGestalt();
-
+		VIAutoRespringAfterBoot();
         /*
          * 第二件事：
          *
